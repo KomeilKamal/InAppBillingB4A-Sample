@@ -1,0 +1,247 @@
+﻿Version=2.71
+IconFile=
+NumberOfModules=0
+Package=ir.mservices.iap.b4a
+DoNotOverwriteManifest=False
+ManifestCode='This code will be applied to the manifest file during compilation.~\n~'You do not need to modify it in most cases.~\n~'See this link for for more information: http://www.basic4ppc.com/forum/showthread.php?p=78136~\n~AddManifestText(~\n~<uses-sdk android:minSdkVersion="4" android:targetSdkVersion="14"/>~\n~<supports-screens android:largeScreens="true" ~\n~    android:normalScreens="true" ~\n~    android:smallScreens="true" ~\n~    android:anyDensity="true"/>)~\n~SetApplicationAttribute(android:icon, "@drawable/icon")~\n~SetApplicationAttribute(android:label, "$LABEL$")~\n~'End of default text.~\n~
+UserTypesHint=
+NumberOfFiles=1
+File1=MainLayout.bal
+NumberOfLibraries=2
+Library1=core
+Library2=myketiap
+@EndOfDesignText@
+#Region  Project Attributes 
+	#ApplicationLabel: Myket Iab Sample
+	#VersionCode: 1
+	#VersionName: 1.0
+	'SupportedOrientations possible values: unspecified, landscape or portrait.
+	#SupportedOrientations: unspecified
+	#CanInstallToExternalStorage: False
+#End Region
+
+#Region  Activity Attributes 
+	#FullScreen: False
+	#IncludeTitle: True
+#End Region
+
+Sub Process_Globals
+	'1.Copy Lib Files in Additional Library Folder 
+	'2.check the InAppBilling3 in refrenced Library panel
+	'3.Add This Code in Manifest Editor:
+	' 	AddPermission(ir.mservices.market.BILLING)
+
+	'Public key
+	Private key As String = "MIGeMA0GCSqGSIb3DQEBAQUAA4GMADCBiAKBgKK2sUaNUFkqm97XpDEv/q5h9IiutAyMnqoNkXKkABrM5vY8GUQd/qmYJCtdgJcd/bBK3W6Ffgz/QTYKD/apPDJJ8nocELlc+b+Jf//+C1R/ahP3HXyuZBumf/Wg9J4ggpRrGNrwI8W9mAlXw+sKEOvZVdwjUDZ4A5Pc4jp+qcS1AgMBAAE="
+	
+	'Your product name (Consumable)
+	Dim SKU_GAS As String = "gas"
+	
+	'The premium upgrade (non-consumable)
+	Dim SKU_PREMIUM As String = "premium"
+	
+	Dim oBillingManager As BillingManager3
+	Dim bIsoBillingManagerAvailable As Boolean = False
+End Sub
+
+Sub Globals
+	Dim Label_Gas As Label
+	Dim Label_MSG As Label
+	Dim Label_Premium As Label
+End Sub
+
+Sub Activity_Create(FirstTime As Boolean)
+	Activity.LoadLayout("MainLayout")
+
+	If FirstTime Then
+		Log("Initialize billing manager")
+		oBillingManager.Initialize("BillingManager", key)
+		
+		'Its for debug log, set it to false after test and when ready to build the App 
+		oBillingManager.DebugLogging = True 'False 'True
+	End If
+	
+	'Show current gas to user
+	Show_Gas
+	
+	'Show premium/normal account to user
+	Show_Premium
+End Sub
+
+'Start the buy gas
+Sub Button_BuyGas_Click
+	StartBuyGas
+End Sub
+
+'Start the buy Premium account
+Sub Button_BuyPremium_Click
+	StartBuyPremium
+End Sub
+
+'Spend gas and reduce the amount of gas
+Sub Button_UseGas_Click
+	Dim iCurrentGas As Int = Get_Gas
+	iCurrentGas = iCurrentGas - 10 
+	Save_Gas(iCurrentGas)
+	Show_Gas
+	Label_MSG.Text = ""
+End Sub
+
+Sub StartBuyGas() 
+	If Get_Gas = 100 Then
+		Label_MSG.Text = "Your Gas is full"
+	Else
+		oBillingManager.RequestPayment(SKU_GAS, "inapp", "Developer Payload")
+	End If
+End Sub 
+
+Sub StartBuyPremium()  
+	If Get_Gas = 100 Then
+		Label_MSG.Text = "You alrady have premium account"
+	Else
+		oBillingManager.RequestPayment(SKU_PREMIUM, "inapp", "Developer Payload")
+	End If
+End Sub 
+
+'Show is billing supported or not
+Sub BillingManager_BillingSupported (Supported As Boolean, Message As String)
+   	Log("BillingSupported: " & Supported & ", " & Message)
+   	ToastMessageShow(oBillingManager.About , True)
+	Log("Subscriptions supported: " & oBillingManager.SubscriptionsSupported)
+	
+	If Supported = True Then
+   		bIsoBillingManagerAvailable = True 
+	End If
+   
+    If bIsoBillingManagerAvailable = True Then
+   		'Get Owned Products
+   		oBillingManager.GetOwnedProducts
+	End If
+End Sub
+
+'Rise when a purchase completed
+Sub BillingManager_PurchaseCompleted(Success As Boolean, Product As Purchase)
+	Log("Is Purchase State: " & Success)
+	
+	If Success Then 
+		ToastMessageShow("PurchaseCompleted: Success" , True)
+		
+		'Consume ProductName if you product is consumable
+		If Product.ProductId = SKU_GAS Then
+			oBillingManager.ConsumeProduct(Product)
+		End If
+		
+		'Check for non-consumable product
+		If Product.ProductId = SKU_PREMIUM Then
+			Premium_Account(True)
+		Else
+			Premium_Account(False)
+		End If
+	Else
+		ToastMessageShow("PurchaseCompleted: Unsuccess" , True)
+	End If
+End Sub
+
+'Rise when a product consumed 
+Sub BillingManager_ProductConsumed (Success As Boolean, Product As Purchase)
+	Log("Product ( " & Product.ProductId & " ) Consume : " & Success )
+	ToastMessageShow("Product ( " & Product.ProductId & " ) Consume : " & Success , False)
+	If Success = True Then
+		Add_Gas
+	End If
+End Sub
+
+'Rise when request for user purchase products
+Sub BillingManager_OwnedProducts(Success As Boolean, purchases As Map)
+   Log("Product owned : " & Success)
+   
+   If Success Then
+      Log(purchases)
+      For Each P As Purchase In purchases.Values
+	  		Log("type : " & P.ItemType & "/" & P.DeveloperPayload) 
+	  		
+			'Check for consumable product (GAS)
+	  		If P.ProductId = SKU_GAS Then
+				oBillingManager.ConsumeProduct(P)
+				Add_Gas
+			End If 
+			
+			'Check for non-consumable product (PREMIUM)
+	  		If P.ProductId = SKU_PREMIUM Then
+				'Premium account available
+				Premium_Account(True)
+			Else
+				Premium_Account(False)
+			End If 
+			
+         Log(P.ProductId & ", Purchased? " & (P.PurchaseState = P.STATE_PURCHASED))
+		 Label_MSG.Text = P.ProductId
+      Next
+   End If
+End Sub
+
+Sub Premium_Account(isAvailable As Boolean)
+	If isAvailable = True Then
+		Label_Premium.Text = "Premium Account"
+		Save_Premium(1)
+	Else
+		Label_Premium.Text = "Normal Account"
+		Save_Premium(0)
+	End If
+End Sub
+
+Sub Add_Gas()
+	'add 10 to gas 
+	Save_Gas( Get_Gas + 10 )
+	'update the ui to show added gas
+	Show_Gas
+End Sub
+
+'Load gas from file
+Sub Get_Gas() As Int
+	Dim i As Int 
+	If File.Exists(File.DirInternal , SKU_GAS) Then 
+		i = File.ReadString(File.DirInternal , SKU_GAS)
+	Else
+		'Start with 100 gas if there is not a file (first run of the app after install)
+		i = 100 
+		Save_Gas(i)
+	End If
+	Return i
+End Sub
+
+'Save gas to file
+Sub Save_Gas(iGasAmount As Int)
+	File.WriteString(File.DirInternal , SKU_GAS , iGasAmount)
+End Sub 
+
+'Load premium from file
+Sub Get_Premium() As Int
+	Dim i As Int 
+	If File.Exists(File.DirInternal , SKU_PREMIUM) Then 
+		i = File.ReadString(File.DirInternal , SKU_PREMIUM)
+	Else
+		i = 0 
+		Save_Premium(i)
+	End If
+	Return i
+End Sub
+
+'Save Premium account to file
+Sub Save_Premium(isPremium As Int)
+	File.WriteString(File.DirInternal , SKU_PREMIUM , isPremium)
+End Sub 
+
+'Show gas to user
+Sub Show_Gas()
+	Label_Gas.Text = "Gas: " & Get_Gas
+End Sub 
+
+'Show premium to user
+Sub Show_Premium()
+	If Get_Premium = 1 Then
+		Label_Premium.Text = "Premium Account"
+	Else
+		Label_Premium.Text = "Normal Account"
+	End If
+End Sub 
