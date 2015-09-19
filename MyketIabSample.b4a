@@ -1,10 +1,8 @@
-﻿Version=2.71
-IconFile=
+﻿Version=5.2
 NumberOfModules=0
-Package=ir.mservices.iap.b4a
-DoNotOverwriteManifest=False
-ManifestCode='This code will be applied to the manifest file during compilation.~\n~'You do not need to modify it in most cases.~\n~'See this link for for more information: http://www.basic4ppc.com/forum/showthread.php?p=78136~\n~AddManifestText(~\n~<uses-sdk android:minSdkVersion="4" android:targetSdkVersion="14"/>~\n~<supports-screens android:largeScreens="true" ~\n~    android:normalScreens="true" ~\n~    android:smallScreens="true" ~\n~    android:anyDensity="true"/>)~\n~SetApplicationAttribute(android:icon, "@drawable/icon")~\n~SetApplicationAttribute(android:label, "$LABEL$")~\n~'End of default text.~\n~
-UserTypesHint=
+Build1=Default,ir.myket.b4a.example
+ManifestCode='This code will be applied to the manifest file during compilation.~\n~'You do not need to modify it in most cases.~\n~'See this link for for more information: http://www.basic4ppc.com/forum/showthread.php?p=78136~\n~AddManifestText(~\n~<uses-sdk android:minSdkVersion="4" android:targetSdkVersion="14"/>~\n~<supports-screens android:largeScreens="true" ~\n~    android:normalScreens="true" ~\n~    android:smallScreens="true" ~\n~    android:anyDensity="true"/>)~\n~SetApplicationAttribute(android:icon, "@drawable/icon")~\n~SetApplicationAttribute(android:label, "$LABEL$")~\n~AddPermission(ir.mservices.market.BILLING)~\n~'End of default text.~\n~
+IconFile=
 NumberOfFiles=1
 File1=MainLayout.bal
 NumberOfLibraries=2
@@ -29,16 +27,22 @@ Sub Process_Globals
 	'1.Copy Lib Files in Additional Library Folder 
 	'2.check the InAppBilling3 in refrenced Library panel
 	'3.Add This Code in Manifest Editor:
-	' 	AddPermission(ir.mservices.market.BILLING)
+	'AddPermission(ir.mservices.market.BILLING)
 
 	'Public key
-	Private key As String = "MIGeMA0GCSqGSIb3DQEBAQUAA4GMADCBiAKBgKK2sUaNUFkqm97XpDEv/q5h9IiutAyMnqoNkXKkABrM5vY8GUQd/qmYJCtdgJcd/bBK3W6Ffgz/QTYKD/apPDJJ8nocELlc+b+Jf//+C1R/ahP3HXyuZBumf/Wg9J4ggpRrGNrwI8W9mAlXw+sKEOvZVdwjUDZ4A5Pc4jp+qcS1AgMBAAE="
+	Private key As String = "MIGeMA0GCSqGSIb3DQEBAQUAA4GMADCBiAKBgN92yCwIt7bxgAC/e8yrpio/07N4bj81X6UikuoPvGHr/kniOiy1iO3XJNa8xJAmb3AjHqUPFTHfO0KP0MJHhEbjic4LplUvTuj4CWlsrsXxevVFGI9rOLIlNEeuhwqLeC90fy9hxJJSQlGXWczQ0WMHv4Czp6fU4hWS/5iW2IfLAgMBAAE="
 	
 	'Your product name (Consumable)
 	Dim SKU_GAS As String = "gas"
 	
 	'The premium upgrade (non-consumable)
 	Dim SKU_PREMIUM As String = "premium"
+	
+	'Does the user have an active subscription To the infinite gas plan?
+	Dim subscribedToInfiniteGas As Boolean= False
+
+	' SKU For our subscription (infinite gas)
+	Dim SKU_INFINITE_GAS As String= "infinite_gas";
 	
 	Dim oBillingManager As BillingManager3
 	Dim bIsoBillingManagerAvailable As Boolean = False
@@ -48,6 +52,7 @@ Sub Globals
 	Dim Label_Gas As Label
 	Dim Label_MSG As Label
 	Dim Label_Premium As Label
+	Dim Button_Infinite_Gas As Button
 End Sub
 
 Sub Activity_Create(FirstTime As Boolean)
@@ -66,25 +71,41 @@ Sub Activity_Create(FirstTime As Boolean)
 	
 	'Show premium/normal account to user
 	Show_Premium
+	
+	'Show if user has Infinite account
+	Show_Infinite
 End Sub
 
 'Start the buy gas
 Sub Button_BuyGas_Click
-	StartBuyGas
+	If subscribedToInfiniteGas Then
+		ToastMessageShow("No need! You're subscribed to infinite gas. Isn't that awesome?",False)
+	Else
+		StartBuyGas					
+	End If			
+	
 End Sub
+
 
 'Start the buy Premium account
 Sub Button_BuyPremium_Click
 	StartBuyPremium
 End Sub
 
+'Buy Infinite Gas
+Sub Button_Infinite_Gas_Click
+	oBillingManager.RequestPayment(SKU_INFINITE_GAS, "subs", "Developer Payload")
+End Sub
+
 'Spend gas and reduce the amount of gas
 Sub Button_UseGas_Click
-	Dim iCurrentGas As Int = Get_Gas
-	iCurrentGas = iCurrentGas - 10 
-	Save_Gas(iCurrentGas)
-	Show_Gas
-	Label_MSG.Text = ""
+	If subscribedToInfiniteGas=False Then
+		Dim iCurrentGas As Int = Get_Gas
+		iCurrentGas = iCurrentGas - 10 
+		Save_Gas(iCurrentGas)
+		Show_Gas
+		Label_MSG.Text = ""
+	End If
 End Sub
 
 Sub StartBuyGas() 
@@ -133,10 +154,14 @@ Sub BillingManager_PurchaseCompleted(Success As Boolean, Product As Purchase)
 		
 		'Check for non-consumable product
 		If Product.ProductId = SKU_PREMIUM Then
-			Premium_Account(True)
-		Else
-			Premium_Account(False)
+			Premium_Account(True)		
 		End If
+		
+		'Check for Infinite GAS
+  		If Product.ProductId = SKU_INFINITE_GAS Then				
+			Save_Inifite_GAS(1)
+			Show_Infinite
+		End If 
 	Else
 		ToastMessageShow("PurchaseCompleted: Unsuccess" , True)
 	End If
@@ -154,13 +179,13 @@ End Sub
 'Rise when request for user purchase products
 Sub BillingManager_OwnedProducts(Success As Boolean, purchases As Map)
    Log("Product owned : " & Success)
-   
+      
    If Success Then
       Log(purchases)
       For Each P As Purchase In purchases.Values
 	  		Log("type : " & P.ItemType & "/" & P.DeveloperPayload) 
 	  		
-			'Check for consumable product (GAS)
+			'Check for product (GAS)
 	  		If P.ProductId = SKU_GAS Then
 				oBillingManager.ConsumeProduct(P)
 				Add_Gas
@@ -169,13 +194,17 @@ Sub BillingManager_OwnedProducts(Success As Boolean, purchases As Map)
 			'Check for non-consumable product (PREMIUM)
 	  		If P.ProductId = SKU_PREMIUM Then
 				'Premium account available
-				Premium_Account(True)
-			Else
-				Premium_Account(False)
+				Premium_Account(True)			
+			End If 
+						
+			'Check for Infinite GAS
+	  		If P.ProductId = SKU_INFINITE_GAS Then				
+				Save_Inifite_GAS(1)
+				Show_Infinite
 			End If 
 			
          Log(P.ProductId & ", Purchased? " & (P.PurchaseState = P.STATE_PURCHASED))
-		 Label_MSG.Text = P.ProductId
+'		 Label_MSG.Text = P.ProductId
       Next
    End If
 End Sub
@@ -215,6 +244,23 @@ Sub Save_Gas(iGasAmount As Int)
 	File.WriteString(File.DirInternal , SKU_GAS , iGasAmount)
 End Sub 
 
+'Get Inifite from file
+Sub Get_Infinite As Int
+	Dim i As Int 
+	If File.Exists(File.DirInternal , SKU_INFINITE_GAS) Then 
+		i = File.ReadString(File.DirInternal , SKU_INFINITE_GAS)
+	Else
+		i = 0 
+		Save_Inifite_GAS(i)
+	End If
+	Return i
+End Sub
+
+'Save Inifite to file
+Sub Save_Inifite_GAS(inifite As Int)
+	File.WriteString(File.DirInternal , SKU_INFINITE_GAS , inifite)
+End Sub
+
 'Load premium from file
 Sub Get_Premium() As Int
 	Dim i As Int 
@@ -245,3 +291,13 @@ Sub Show_Premium()
 		Label_Premium.Text = "Normal Account"
 	End If
 End Sub 
+
+Sub Show_Infinite
+	If Get_Infinite=1 Then
+		Label_Gas.Text="Inifite Account"
+		subscribedToInfiniteGas=True	
+		Button_Infinite_Gas.Visible=False
+	Else
+		subscribedToInfiniteGas=False			
+	End If
+End Sub
